@@ -2,7 +2,6 @@
 (function () {
     'use strict';
 
-    var POINTS = 401;                 // distances per curve
     var SVG_NS = 'http://www.w3.org/2000/svg';
 
     var MODES = {
@@ -18,7 +17,8 @@
         { id: 'h2', label: 'High terminal height', unit: 'm', min: 1.5, max: 20000, log: true, def: 10000 },
         { id: 'p', label: 'Time percentage', unit: '%', min: 1, max: 99, step: 1, def: 50 },
         { id: 'erp', label: 'Radiated power (e.r.p.)', unit: 'kW', min: 0.001, max: 1000, log: true, def: 1 },
-        { id: 'dmax', label: 'Distance range', unit: 'km', min: 50, max: 1800, step: 50, def: 1000 }
+        { id: 'dmax', label: 'Distance range', unit: 'km', min: 50, max: 1800, step: 50, def: 1000 },
+        { id: 'n', label: 'Number of points', unit: '', min: 11, max: 5000, log: true, integer: true, def: 401 }
     ];
     var PARAM_BY_ID = {};
     PARAMS.forEach(function (param) { PARAM_BY_ID[param.id] = param; });
@@ -80,8 +80,10 @@
 
     function posToValue(param, pos) {
         var t = pos / 1000;
-        if (param.log)
-            return clamp(round3(param.min * Math.pow(param.max / param.min, t)), param.min, param.max);
+        if (param.log) {
+            var scaled = round3(param.min * Math.pow(param.max / param.min, t));
+            return clamp(param.integer ? Math.round(scaled) : scaled, param.min, param.max);
+        }
         var value = param.min + t * (param.max - param.min);
         return clamp(Math.round(value / param.step) * param.step, param.min, param.max);
     }
@@ -104,7 +106,8 @@
         var query = new URLSearchParams(location.hash.replace(/^#/, ''));
         PARAMS.forEach(function (param) {
             var value = parseFloat(query.get(param.id));
-            if (isFinite(value)) state[param.id] = clamp(value, param.min, param.max);
+            if (isFinite(value))
+                state[param.id] = clamp(param.integer ? Math.round(value) : value, param.min, param.max);
         });
         if (query.get('pol') === '1') state.pol = 1;
         if (query.get('q') === 'l') state.quantity = 'l';
@@ -137,7 +140,7 @@
             number.min = param.min;
             number.max = param.max;
             number.step = 'any';
-            number.setAttribute('aria-label', param.label + ' in ' + param.unit);
+            number.setAttribute('aria-label', param.unit ? param.label + ' in ' + param.unit : param.label);
             valueBox.appendChild(number);
             valueBox.appendChild(html('span', 'control-unit', param.unit));
 
@@ -166,6 +169,7 @@
             });
             number.addEventListener('change', function () {
                 var value = parseFloat(number.value);
+                if (param.integer) value = Math.round(value);
                 setParam(param.id, isFinite(value) ? clamp(value, param.min, param.max) : state[param.id]);
             });
         });
@@ -211,7 +215,7 @@
             var pos = valueToPos(param, state[param.id]);
             control.range.value = pos;
             control.range.style.setProperty('--pos', (pos / 10) + '%');
-            control.range.setAttribute('aria-valuetext', fmtParam(state[param.id]) + ' ' + param.unit);
+            control.range.setAttribute('aria-valuetext', (fmtParam(state[param.id]) + ' ' + param.unit).trim());
             if (document.activeElement !== control.number) control.number.value = state[param.id];
         });
         // the radiated power has no effect on the transmission loss
@@ -277,7 +281,7 @@
         queued = false;
         busy = true;
         pendingRequest = {
-            id: ++requestId, points: POINTS,
+            id: ++requestId, points: state.n,
             f: state.f, h1: state.h1, h2: state.h2, p: state.p, pol: state.pol, dmax: state.dmax
         };
         worker.postMessage(pendingRequest);
@@ -640,7 +644,8 @@
         var body = document.querySelector('#data-table tbody');
         var rows = document.createDocumentFragment();
         var n = data.d.length;
-        for (var i = 0; i < n; i += 10) {
+        var stride = Math.max(1, Math.ceil((n - 1) / 40));
+        for (var i = 0; i < n; i += stride) {
             var tr = document.createElement('tr');
             rowValues(i).forEach(function (text) { tr.appendChild(html('td', '', text)); });
             rows.appendChild(tr);
