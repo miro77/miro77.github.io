@@ -3,33 +3,139 @@
 
 <head>
     <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <!--[if IE]><link rel="icon" href="/favicon.ico"><![endif]-->
-    <title>p528-gui</title>
-    <script src="coi-serviceworker.js"></script>
-    <script defer="defer" type="module" src="/js/chunk-vendors.59fbcb55.js"></script>
-    <script defer="defer" type="module" src="/js/app.d2b9e4df.js"></script>
-    <link href="/css/chunk-vendors.b4933c15.css" rel="stylesheet">
-    <link rel="icon" type="image/svg+xml" href="/img/icons/favicon.svg">
-    <link rel="icon" type="image/png" sizes="32x32" href="/img/icons/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/img/icons/favicon-16x16.png">
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#4DBA87">
-    <meta name="apple-mobile-web-app-capable" content="no">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="p528-gui">
-    <link rel="apple-touch-icon" href="/img/icons/apple-touch-icon-152x152.png">
-    <link rel="mask-icon" href="/img/icons/safari-pinned-tab.svg" color="#4DBA87">
-    <meta name="msapplication-TileImage" content="/img/icons/msapplication-icon-144x144.png">
-    <meta name="msapplication-TileColor" content="#000000">
-    <script defer="defer" src="/js/chunk-vendors-legacy.61da9fd0.js" nomodule></script>
-    <script defer="defer" src="/js/app-legacy.f771f3bf.js" nomodule></script>
+    <title>P.528 Explorer</title>
+    <meta name="description"
+        content="Interactive field strength curves for aeronautical paths, computed in the browser with Recommendation ITU-R P.528-5.">
+    <meta name="color-scheme" content="light dark">
+    <link rel="icon" href="favicon.ico">
+    <link rel="stylesheet" href="assets/style.css">
+    <script>
+        // Apply a stored theme choice before the first paint.
+        try {
+            var storedTheme = localStorage.getItem('theme');
+            if (storedTheme === 'light' || storedTheme === 'dark')
+                document.documentElement.dataset.theme = storedTheme;
+        } catch (e) { /* storage unavailable, follow the system */ }
+
+        // The previous version of this site installed service workers. Remove
+        // them, the page no longer needs any.
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function (registrations) {
+                registrations.forEach(function (r) { r.unregister(); });
+            }).catch(function () { });
+        }
+    </script>
 </head>
 
-<body><noscript><strong>We're sorry but p528-gui doesn't work properly without JavaScript enabled. Please enable it to
-            continue.</strong></noscript>
-    <div id="app"></div>
+<body>
+    <header class="page-header">
+        <div class="page-title">
+            <h1>P.528 Explorer</h1>
+            <p>Aeronautical propagation curves, Recommendation ITU-R P.528-5</p>
+        </div>
+        <button type="button" class="ghost-button" id="theme-toggle" aria-label="Switch between light and dark theme">
+            <span id="theme-toggle-label">Dark</span>
+        </button>
+    </header>
+
+    <main class="layout">
+        <section class="card chart-card viz-root" aria-labelledby="chart-title">
+            <div class="chart-head">
+                <div>
+                    <h2 id="chart-title">Field strength over distance</h2>
+                    <p class="chart-subtitle" id="chart-subtitle"></p>
+                </div>
+                <div class="segmented" role="radiogroup" aria-label="Quantity shown">
+                    <label><input type="radio" name="quantity" value="e" checked><span>Field strength</span></label>
+                    <label><input type="radio" name="quantity" value="l"><span>Transmission loss</span></label>
+                </div>
+            </div>
+
+            <div class="stats" id="stats">
+                <div class="stat">
+                    <div class="stat-label">Radio horizon</div>
+                    <div class="stat-value" id="stat-horizon">–</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label" id="stat-end-label">At range end</div>
+                    <div class="stat-value" id="stat-end">–</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Calculation</div>
+                    <div class="stat-value" id="stat-time">–</div>
+                </div>
+            </div>
+
+            <div class="legend" aria-hidden="true">
+                <span class="legend-item"><span class="line-key key-los"></span>Line of sight</span>
+                <span class="legend-item"><span class="line-key key-diffraction"></span>Diffraction</span>
+                <span class="legend-item"><span class="line-key key-troposcatter"></span>Troposcatter</span>
+                <span class="legend-item"><span class="line-key key-free-space"></span>Free space</span>
+            </div>
+
+            <div class="chart-wrap" id="chart-wrap">
+                <svg id="chart" role="img" tabindex="0" aria-labelledby="chart-title chart-subtitle"></svg>
+                <div class="tooltip" id="tooltip" hidden></div>
+                <div class="chart-message" id="chart-message">Loading the model…</div>
+            </div>
+
+            <p class="notice" id="notice" hidden></p>
+
+            <details class="table-view">
+                <summary>Data table</summary>
+                <div class="table-actions">
+                    <button type="button" class="ghost-button" id="download-csv">Download CSV (all points)</button>
+                </div>
+                <div class="table-scroll">
+                    <table id="data-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Distance (km)</th>
+                                <th scope="col">Field strength (dBµV/m)</th>
+                                <th scope="col">Transmission loss (dB)</th>
+                                <th scope="col">Free space loss (dB)</th>
+                                <th scope="col">Absorption (dB)</th>
+                                <th scope="col">Mode</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </details>
+        </section>
+
+        <aside class="card controls" aria-label="Parameters">
+            <h2>Parameters</h2>
+            <div id="sliders"></div>
+
+            <div class="control">
+                <div class="control-head"><span class="control-label">Polarization</span></div>
+                <div class="segmented wide" role="radiogroup" aria-label="Polarization">
+                    <label><input type="radio" name="pol" value="0" checked><span>Horizontal</span></label>
+                    <label><input type="radio" name="pol" value="1"><span>Vertical</span></label>
+                </div>
+            </div>
+
+            <button type="button" class="ghost-button reset" id="reset">Reset to defaults</button>
+        </aside>
+    </main>
+
+    <footer class="page-footer">
+        <p>
+            The curve updates while you move a slider. The model runs in your browser as WebAssembly;
+            nothing is sent to a server. Field strength is derived from the basic transmission loss
+            <i>L</i><sub>b</sub> as <i>E</i> = 139.3 + 20 log<sub>10</sub> <i>f</i> − <i>L</i><sub>b</sub> + 10 log<sub>10</sub> <i>P</i>
+            in dB(µV/m), with <i>f</i> in MHz and the e.r.p. <i>P</i> in kW.
+        </p>
+        <p>
+            Based on the U.S. reference implementation of Recommendation ITU-R P.528-5.
+            Results are informative and not an official ITU prediction.
+            Source: <a href="https://github.com/miro77/p528-wasm">github.com/miro77/p528-wasm</a>
+        </p>
+    </footer>
+
+    <script src="assets/app.js"></script>
 </body>
 
 </html>
